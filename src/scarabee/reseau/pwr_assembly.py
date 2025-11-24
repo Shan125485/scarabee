@@ -2886,7 +2886,8 @@ class PWRAssembly:
 
             return ff
 
-    def _compute_few_group_xs(self) -> DiffusionCrossSection:
+    
+    def _compute_few_group_xs(self, D_type=None) -> DiffusionCrossSection:
         """
         Computes the few-group diffusion cross sections for the problem.
 
@@ -2911,12 +2912,86 @@ class PWRAssembly:
         # chosen to go with Smith's recommendation of performing energy
         # condensation on the diffusion coefficients.
 
-        homog_xs = self._asmbly_moc.homogenize()
-        diff_xs = homog_xs.diffusion_xs()
+        homog_xs = self._asmbly_moc.homogenize()    # This function is in moc_driver.cpp, std::make_shared<CrossSection>(Et, Dtr, Ea, Es, Ef, vEf, chi)
         flux_spectrum = self._asmbly_moc.homogenize_flux_spectrum()
-        return diff_xs.condense(self.condensation_scheme, flux_spectrum)
+        diff_xs = homog_xs.diffusion_xs() 
 
-    def _compute_diffusion_data(self) -> DiffusionData:
+        if D_type == None:        
+            return diff_xs.condense(self.condensation_scheme, flux_spectrum)
+        
+        elif D_type == 'flux-limited':
+
+            ngroups = flux_spectrum.shape[0]
+            s1_array = np.zeros((ngroups, ngroups))
+            product = np.zeros(ngroups)
+            delta_tr_array = np.zeros(ngroups)
+            Et_array = np.zeros(ngroups)
+
+            for energy_out in range(ngroups):
+                product[energy_out] = 0
+                Et_array[energy_out] = homog_xs.Et(energy_out)
+                for energy_in in range(ngroups):
+                    s1_array[energy_in,energy_out] = homog_xs.Es(1,energy_in,energy_out)
+                    product[energy_out] += s1_array[energy_in,energy_out] * flux_spectrum[energy_in]
+                delta_tr_array[energy_out] = np.sum(product[energy_out]) / flux_spectrum[energy_out]
+        
+            Etr_fl_array = Et_array - delta_tr_array
+            D_mod = np.array( 1 / (3 * Etr_fl_array))
+        
+        elif D_type == 'outscatter':
+            ngroups = flux_spectrum.shape[0]
+            s1_array = np.zeros((ngroups, ngroups))
+            Et_array = np.zeros(ngroups)
+
+            for energy_out in range(ngroups):
+                Et_array[energy_out] = homog_xs.Et(energy_out)
+                for energy_in in range(ngroups):
+                    s1_array[energy_in,energy_out] = homog_xs.Es(1,energy_in,energy_out)
+            
+            s1g_array = np.sum(s1_array,1)
+
+            delta_tr_array = s1g_array
+
+            Etr_os_array = Et_array - delta_tr_array
+            D_mod = np.array( 1 / (3 * Etr_os_array))
+        
+        else:
+            raise ValueError("D_type must be one of ['flux-limited', 'outscatter']")
+
+
+        # Extract other parameters from the homogenised diffusion cross section object
+        Ea_array = np.zeros((ngroups))
+        Es_array = np.zeros((ngroups,ngroups))
+        Ef_array = np.zeros((ngroups))
+        vEf_array = np.zeros((ngroups))
+        chi_array = np.zeros((ngroups))
+
+        for g in range(ngroups):
+            Ea_array[g] = diff_xs.Ea(g)
+            Ef_array[g] = diff_xs.Ef(g)
+            vEf_array[g] = diff_xs.vEf(g)
+            chi_array[g] = diff_xs.chi(g)
+            for g_out in range(ngroups):
+                Es_array[g,g_out] = diff_xs.Es(g, g_out)
+       
+        # Explicitly cast to ndarray[numpy.float64]
+        Ea_array = np.asarray(Ea_array, dtype=np.float64)
+        Es_array = np.asarray(Es_array, dtype=np.float64)
+        Ef_array = np.asarray(Ef_array, dtype=np.float64)
+        vEf_array = np.asarray(vEf_array, dtype=np.float64)
+        chi_array = np.asarray(chi_array, dtype=np.float64)
+        D_mod = np.asarray(D_mod, dtype=np.float64)
+
+        # deal with nans...
+        D_mod = np.nan_to_num(D_mod, nan=0.0, posinf=1e6, neginf=1e6)
+
+        diffusionXS_mod = DiffusionCrossSection(D_mod, Ea_array, Es_array, Ef_array, vEf_array, chi_array, diff_xs.name)  
+        condensedDXS = diffusionXS_mod.condense(self.condensation_scheme, flux_spectrum)
+
+        return condensedDXS
+  
+
+    def _compute_diffusion_data(self, D_type=None) -> DiffusionData:
         """
         Computes the nodal diffusion data for the assembly.
 
@@ -2925,7 +3000,9 @@ class PWRAssembly:
         DiffusionData
             Few-group diffusion cross sections and discontinuity factors.
         """
-        diff_xs = self._compute_few_group_xs()
+  
+        diff_xs = self._compute_few_group_xs(D_type)
+
         ff = self._compute_form_factors()
 
         if (
@@ -2970,6 +3047,7 @@ class PWRAssembly:
             calculation is not performed, but the leakage correction and flux
             normalization are.
         """
+    
         if self_shield:
             # If we want self-shielding, do that stuff
             self.self_shield_and_xs_update()
@@ -2985,6 +3063,7 @@ class PWRAssembly:
         self._asmbly_moc.flux_tolerance = self.flux_tolerance
         self._asmbly_moc.keff_tolerance = self.keff_tolerance
 
+        
         if transport:
             set_logging_level(LogLevel.Warning)
             self._asmbly_moc.solve()
@@ -3097,7 +3176,7 @@ class PWRAssembly:
         self._diffusion_data.append(self._compute_diffusion_data())
         scarabee_log(LogLevel.Info, "")
 
-    def solve(self) -> None:
+    def solve(self,D_type=None) -> None:
         """
         Solves the assembly problem. If depletion_exposure_steps or
         depletion_time_steps are None, then a single k-eigenvalue problem will
@@ -3107,7 +3186,7 @@ class PWRAssembly:
             # Single one-off calulcation
             self._run_assembly_calculation(True)
             self._keff = self._asmbly_moc.keff
-            self._diffusion_data = self._compute_diffusion_data()
+            self._diffusion_data = self._compute_diffusion_data(D_type)
         else:
             # Run depletion steps
             self._run_depletion_steps()
