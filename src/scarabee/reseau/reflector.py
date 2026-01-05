@@ -12,7 +12,7 @@ from .._scarabee import (
 from .nodal_flux import NodalFlux1D
 
 import numpy as np
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 
 class Reflector:
@@ -117,7 +117,7 @@ class Reflector:
                 "The assembly width is smaller than the sum of the gap and baffle widths."
             )
 
-    def solve(self) -> None:
+    def solve(self, D_type=None) -> None:
         """
         Runs a 1D annular problem to generate few group cross sections for the
         reflector, with the core baffle.
@@ -188,16 +188,247 @@ class Reflector:
             list(range(NF, NF + NG + NB + NR))
         )
         ref_homog_diff_xs = ref_homog_xs.diffusion_xs()
-        self.diffusion_xs = ref_homog_diff_xs.condense(
+        ngroups = ref_homog_spec.shape[0]
+        # self.diffusion_xs = ref_homog_diff_xs.condense(
+        #     self.condensation_scheme, ref_homog_spec
+        # )
+
+
+        #################
+        # INSERT alternative ways of condensing the reflector diffusion coefficient here
+
+        if D_type == None:     
+            self.diffusion_xs = ref_homog_diff_xs.condense(
             self.condensation_scheme, ref_homog_spec
-        )
+        )   
+        
+        elif D_type == 'flux-limited':
+
+
+            s1_array = np.zeros((ngroups, ngroups))
+            product = np.zeros(ngroups)
+            delta_tr_array = np.zeros(ngroups)
+            Et_array = np.zeros(ngroups)
+
+            for energy_out in range(ngroups):
+                product[energy_out] = 0
+                Et_array[energy_out] = ref_homog_xs.Et(energy_out)
+                for energy_in in range(ngroups):
+                    s1_array[energy_in,energy_out] = ref_homog_xs.Es(1,energy_in,energy_out)
+                    product[energy_out] += s1_array[energy_in,energy_out] * ref_homog_spec[energy_in]
+                delta_tr_array[energy_out] = np.sum(product[energy_out]) / ref_homog_spec[energy_out]
+        
+            Etr_fl_array = Et_array - delta_tr_array
+            D_mod_ref= np.array( 1 / (3 * Etr_fl_array))
+
+            # Extract other parameters from the homogenised diffusion cross section object
+            Ea_array = np.zeros((ngroups))
+            Es_array = np.zeros((ngroups,ngroups))
+            Ef_array = np.zeros((ngroups))
+            vEf_array = np.zeros((ngroups))
+            chi_array = np.zeros((ngroups))
+
+            for g in range(ngroups):
+                Ea_array[g] = ref_homog_diff_xs.Ea(g)
+                Ef_array[g] = ref_homog_diff_xs.Ef(g)
+                vEf_array[g] = ref_homog_diff_xs.vEf(g)
+                chi_array[g] = ref_homog_diff_xs.chi(g)
+                for g_out in range(ngroups):
+                    Es_array[g,g_out] = ref_homog_diff_xs.Es(g, g_out)
+        
+            # Explicitly cast to ndarray[numpy.float64]
+            Ea_array = np.asarray(Ea_array, dtype=np.float64)
+            Es_array = np.asarray(Es_array, dtype=np.float64)
+            Ef_array = np.asarray(Ef_array, dtype=np.float64)
+            vEf_array = np.asarray(vEf_array, dtype=np.float64)
+            chi_array = np.asarray(chi_array, dtype=np.float64)
+            D_mod_ref = np.asarray(D_mod_ref, dtype=np.float64)
+
+            # deal with nans...
+            D_mod_ref = np.nan_to_num(D_mod_ref, nan=0.0, posinf=1e6, neginf=1e6)
+
+            ref_homog_diff_xs_mod = DiffusionCrossSection(D_mod_ref, Ea_array, Es_array, Ef_array, vEf_array, chi_array, ref_homog_diff_xs.name)  
+            self.diffusion_xs = ref_homog_diff_xs_mod.condense(
+                self.condensation_scheme, ref_homog_spec
+            )   
+        
+        
+        elif D_type == 'outscatter':
+
+            s1_array = np.zeros((ngroups, ngroups))
+            Et_array = np.zeros(ngroups)
+
+            for energy_out in range(ngroups):
+                Et_array[energy_out] = ref_homog_xs.Et(energy_out)
+                for energy_in in range(ngroups):
+                    s1_array[energy_in,energy_out] = ref_homog_xs.Es(1,energy_in,energy_out)
+            
+            s1g_array = np.sum(s1_array,1)
+
+            delta_tr_array = s1g_array
+
+            Etr_os_array = Et_array - delta_tr_array
+            D_mod_ref = np.array( 1 / (3 * Etr_os_array))
+
+
+            # Extract other parameters from the homogenised diffusion cross section object
+            Ea_array = np.zeros((ngroups))
+            Es_array = np.zeros((ngroups,ngroups))
+            Ef_array = np.zeros((ngroups))
+            vEf_array = np.zeros((ngroups))
+            chi_array = np.zeros((ngroups))
+
+            for g in range(ngroups):
+                Ea_array[g] = ref_homog_diff_xs.Ea(g)
+                Ef_array[g] = ref_homog_diff_xs.Ef(g)
+                vEf_array[g] = ref_homog_diff_xs.vEf(g)
+                chi_array[g] = ref_homog_diff_xs.chi(g)
+                for g_out in range(ngroups):
+                    Es_array[g,g_out] = ref_homog_diff_xs.Es(g, g_out)
+        
+            # Explicitly cast to ndarray[numpy.float64]
+            Ea_array = np.asarray(Ea_array, dtype=np.float64)
+            Es_array = np.asarray(Es_array, dtype=np.float64)
+            Ef_array = np.asarray(Ef_array, dtype=np.float64)
+            vEf_array = np.asarray(vEf_array, dtype=np.float64)
+            chi_array = np.asarray(chi_array, dtype=np.float64)
+            D_mod_ref = np.asarray(D_mod_ref, dtype=np.float64)
+
+            # deal with nans...
+            D_mod_ref = np.nan_to_num(D_mod_ref, nan=0.0, posinf=1e6, neginf=1e6)
+
+            ref_homog_diff_xs_mod = DiffusionCrossSection(D_mod_ref, Ea_array, Es_array, Ef_array, vEf_array, chi_array, ref_homog_diff_xs.name)  
+            self.diffusion_xs = ref_homog_diff_xs_mod.condense(
+                self.condensation_scheme, ref_homog_spec
+            )   
+            
+        
+        else:
+            raise ValueError("D_type must be one of ['flux-limited', 'outscatter', None]")
+
+
+        #############
 
         fuel_homog_xs = ref_sn.homogenize(list(range(0, NF)))
         fuel_homog_spec = ref_sn.homogenize_flux_spectrum(list(range(0, NF)))
         fuel_homog_diff_xs = fuel_homog_xs.diffusion_xs()
-        fuel_diffusion_xs = fuel_homog_diff_xs.condense(
+        ngroups = fuel_homog_spec.shape[0]
+        # fuel_diffusion_xs = fuel_homog_diff_xs.condense(
+        #     self.condensation_scheme, fuel_homog_spec
+        # )
+
+        #################
+        # INSERT alternative ways of condensing the fuel block diffusion coefficient here
+
+        if D_type == None:     
+            fuel_diffusion_xs = fuel_homog_diff_xs.condense(
             self.condensation_scheme, fuel_homog_spec
         )
+        
+        elif D_type == 'flux-limited':
+
+            s1_array = np.zeros((ngroups, ngroups))
+            product = np.zeros(ngroups)
+            delta_tr_array = np.zeros(ngroups)
+            Et_array = np.zeros(ngroups)
+
+            for energy_out in range(ngroups):
+                product[energy_out] = 0
+                Et_array[energy_out] = fuel_homog_xs.Et(energy_out)
+                for energy_in in range(ngroups):
+                    s1_array[energy_in,energy_out] = fuel_homog_xs.Es(1,energy_in,energy_out)
+                    product[energy_out] += s1_array[energy_in,energy_out] * fuel_homog_spec[energy_in]
+                delta_tr_array[energy_out] = np.sum(product[energy_out]) / fuel_homog_spec[energy_out]
+        
+            Etr_fl_array = Et_array - delta_tr_array
+            D_mod_fuel = np.array( 1 / (3 * Etr_fl_array))
+
+
+            # Extract other parameters from the homogenised diffusion cross section object
+            Ea_array = np.zeros((ngroups))
+            Es_array = np.zeros((ngroups,ngroups))
+            Ef_array = np.zeros((ngroups))
+            vEf_array = np.zeros((ngroups))
+            chi_array = np.zeros((ngroups))
+
+            for g in range(ngroups):
+                Ea_array[g] = fuel_homog_diff_xs.Ea(g)
+                Ef_array[g] = fuel_homog_diff_xs.Ef(g)
+                vEf_array[g] = ref_homog_diff_xs.vEf(g)
+                chi_array[g] = ref_homog_diff_xs.chi(g)
+                for g_out in range(ngroups):
+                    Es_array[g,g_out] = ref_homog_diff_xs.Es(g, g_out)
+        
+            # Explicitly cast to ndarray[numpy.float64]
+            Ea_array = np.asarray(Ea_array, dtype=np.float64)
+            Es_array = np.asarray(Es_array, dtype=np.float64)
+            Ef_array = np.asarray(Ef_array, dtype=np.float64)
+            vEf_array = np.asarray(vEf_array, dtype=np.float64)
+            chi_array = np.asarray(chi_array, dtype=np.float64)
+            D_mod_fuel = np.asarray(D_mod_fuel, dtype=np.float64)
+
+            # deal with nans...
+            D_mod_fuel = np.nan_to_num(D_mod_fuel, nan=0.0, posinf=1e6, neginf=1e6)
+
+            fuel_homog_diff_xs_mod = DiffusionCrossSection(D_mod_fuel, Ea_array, Es_array, Ef_array, vEf_array, chi_array, fuel_homog_diff_xs.name)  
+            fuel_diffusion_xs = fuel_homog_diff_xs_mod.condense(
+                self.condensation_scheme, fuel_homog_spec
+            )   
+        
+        elif D_type == 'outscatter':
+            s1_array = np.zeros((ngroups, ngroups))
+            Et_array = np.zeros(ngroups)
+
+            for energy_out in range(ngroups):
+                Et_array[energy_out] = fuel_homog_xs.Et(energy_out)
+                for energy_in in range(ngroups):
+                    s1_array[energy_in,energy_out] = fuel_homog_xs.Es(1,energy_in,energy_out)
+            
+            s1g_array = np.sum(s1_array,1)
+
+            delta_tr_array = s1g_array
+
+            Etr_os_array = Et_array - delta_tr_array
+            D_mod_fuel = np.array( 1 / (3 * Etr_os_array))
+
+             # Extract other parameters from the homogenised diffusion cross section object
+            Ea_array = np.zeros((ngroups))
+            Es_array = np.zeros((ngroups,ngroups))
+            Ef_array = np.zeros((ngroups))
+            vEf_array = np.zeros((ngroups))
+            chi_array = np.zeros((ngroups))
+
+            for g in range(ngroups):
+                Ea_array[g] = fuel_homog_diff_xs.Ea(g)
+                Ef_array[g] = fuel_homog_diff_xs.Ef(g)
+                vEf_array[g] = ref_homog_diff_xs.vEf(g)
+                chi_array[g] = ref_homog_diff_xs.chi(g)
+                for g_out in range(ngroups):
+                    Es_array[g,g_out] = ref_homog_diff_xs.Es(g, g_out)
+        
+            # Explicitly cast to ndarray[numpy.float64]
+            Ea_array = np.asarray(Ea_array, dtype=np.float64)
+            Es_array = np.asarray(Es_array, dtype=np.float64)
+            Ef_array = np.asarray(Ef_array, dtype=np.float64)
+            vEf_array = np.asarray(vEf_array, dtype=np.float64)
+            chi_array = np.asarray(chi_array, dtype=np.float64)
+            D_mod_fuel = np.asarray(D_mod_fuel, dtype=np.float64)
+
+            # deal with nans...
+            D_mod_fuel = np.nan_to_num(D_mod_fuel, nan=0.0, posinf=1e6, neginf=1e6)
+
+            fuel_homog_diff_xs_mod = DiffusionCrossSection(D_mod_fuel, Ea_array, Es_array, Ef_array, vEf_array, chi_array, fuel_homog_diff_xs.name)  
+            fuel_diffusion_xs = fuel_homog_diff_xs_mod.condense(
+                self.condensation_scheme, fuel_homog_spec
+            )   
+        
+        else:
+            raise ValueError("D_type must be one of ['flux-limited', 'outscatter', None]")
+
+       
+        
+
+        #############
 
         # Obtain net currents at node boundaries and average flux
         avg_flx_ref = np.zeros(len(self.condensation_scheme))
@@ -230,16 +461,20 @@ class Reflector:
         )
 
         # Plot reference Sn flux and nodal flux
-        # for g in range(len(self.condensation_scheme)):
-        #    nodal_flux = np.zeros(len(x))
-        #    nodal_flux[:NF] = fuel_node(x[:NF], g)
-        #    nodal_flux[NF:] = ref_node(x[NF:], g)
-        #    plt.plot(x, few_group_flux[g, :], label="Sn")
-        #    plt.plot(x, nodal_flux, label="Nodal")
-        #    plt.xlabel("x [cm]")
-        #    plt.ylabel("Flux [Arb. Units]")
-        #    plt.title("Group {:}".format(g))
-        #    plt.show()
+        
+        for g in range(len(self.condensation_scheme)):
+           nodal_flux = np.zeros(len(x))
+           nodal_flux[:NF] = fuel_node(x[:NF], g)
+           nodal_flux[NF:] = ref_node(x[NF:], g)
+           plt.plot(x, few_group_flux[g, :], label="Sn")
+           plt.plot(x, nodal_flux, label="Nodal")
+           plt.xlabel("x [cm]")
+           plt.ylabel("Flux [Arb. Units]")
+           plt.title("Group {:}".format(g))
+           plt.grid()
+           plt.legend()
+           plt.savefig('outputs/reflector_flux_G{:.0f}.svg'.format(g))
+           plt.close()
 
         # Compute the ADFs
         self.adf = np.zeros((len(self.condensation_scheme), 6))
