@@ -2,14 +2,15 @@ from scarabee import *
 import numpy as np
 import matplotlib.pyplot as plt
 
-ndl = NDLibrary()
-
+# ndl = NDLibrary()
+ndl = NDLibrary("/home/st712/MaterialsLibrary/hdf5_files/endf8_shem281.h5") # MY library location
 # Get U235 so we can steal the fission spectrum
 U235_comp = MaterialComposition(Fraction.Atoms)
 U235_comp.add_nuclide("U235", 1.)
 U235_mat = Material(U235_comp, 293.6, 1., DensityUnits.a_bcm, ndl)
 U235 = U235_mat.dilution_xs([1.E10], ndl)
 G = U235.ngroups
+print(G)
 chi = np.zeros(G)
 for g in range(G):
   chi[g] = U235.chi(g)
@@ -52,7 +53,7 @@ Etr = 1. / (3. * D)
 ratio = Etr / Et
 
 # Make the plot
-plt.stairs(values=ratio, edges=ndl.group_bounds)
+plt.stairs(values=ratio, edges=ndl.group_bounds, label='ratio')
 plt.xlabel('Energy [eV]')
 plt.ylabel(r'$\Sigma_{tr} / \Sigma_t$ for H$^1$ in H$_2$O')
 plt.xscale('log')
@@ -66,9 +67,10 @@ for g in range(G):
   Et[g] -= Delta[g]
   Es[0, g, g] -= Delta[g]
 
-plt.stairs(values=Et, edges=ndl.group_bounds)
+plt.stairs(values=Et, edges=ndl.group_bounds, label='Transport XS')
 plt.xlabel('Energy [eV]')
 plt.ylabel('Transport Cross Section [barns]')
 plt.xscale('log')
 plt.yscale('log')
-plt.show()
+plt.legend()
+plt.savefig('/home/st712/scarabee/examples/outputs/H1_transport_correction.svg')
