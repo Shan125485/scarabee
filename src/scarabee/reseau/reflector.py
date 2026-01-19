@@ -12,6 +12,7 @@ from .._scarabee import (
 from .nodal_flux import NodalFlux1D
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
 
@@ -453,6 +454,34 @@ class Reflector:
         x_fuel = np.sum(dx[:NF])
         x_ref_end = np.sum(dx)
 
+
+
+            
+
+        # SHAN EDIT: store intermediate data
+        dictionary = {'xmin': [0, x_fuel], 'xmax': [x_fuel, x_ref_end], 'keff': [ref_sn.keff, ref_sn.keff], 
+                           'avg_flx0': [avg_flx_fuel[0], avg_flx_ref[0]], 
+                           'avg_flx1': [avg_flx_fuel[1], avg_flx_ref[1]], 
+                           'jneg': [j_0, j_mid], 'jpos': [j_mid, j_max], 
+                           'D0': [fuel_diffusion_xs.D(0), self.diffusion_xs.D(0)], 'D1': [fuel_diffusion_xs.D(1), self.diffusion_xs.D(1)],
+                           'Ea0': [fuel_diffusion_xs.Ea(0), self.diffusion_xs.Ea(0)], 
+                           'Ea1': [fuel_diffusion_xs.Ea(1), self.diffusion_xs.Ea(1)],
+                           'Es00': [fuel_diffusion_xs.Es(0,0), self.diffusion_xs.Es(0,0)],
+                           'Es01': [fuel_diffusion_xs.Es(0,1), self.diffusion_xs.Es(0,1)],
+                           'Es10': [fuel_diffusion_xs.Es(1,0), self.diffusion_xs.Es(1,0)],
+                           'Es11': [fuel_diffusion_xs.Es(1,1), self.diffusion_xs.Es(1,1)],
+                           'Ef0': [fuel_diffusion_xs.Ef(0), self.diffusion_xs.Ef(0)],
+                           'Ef1': [fuel_diffusion_xs.Ef(1), self.diffusion_xs.Ef(1)],
+                           'vEf0': [fuel_diffusion_xs.vEf(0), self.diffusion_xs.vEf(0)],
+                           'vEf1': [fuel_diffusion_xs.vEf(1), self.diffusion_xs.vEf(1)],
+                           'chi0': [fuel_diffusion_xs.chi(0), self.diffusion_xs.chi(0)],
+                           'ch1': [fuel_diffusion_xs.chi(1), self.diffusion_xs.chi(1)],
+                           }
+        df_fuel = pd.DataFrame(data = dictionary)
+        df_fuel.to_csv('outputs/reflector_nodal_inputs.csv')
+
+
+
         fuel_node = NodalFlux1D(
             0.0, x_fuel, ref_sn.keff, fuel_diffusion_xs, avg_flx_fuel, j_0, j_mid
         )
@@ -468,9 +497,10 @@ class Reflector:
            nodal_flux[NF:] = ref_node(x[NF:], g)
            plt.plot(x, few_group_flux[g, :], label="Sn")
            plt.plot(x, nodal_flux, label="Nodal")
+           plt.vlines(x_fuel, ymin=np.min(few_group_flux[g, :]), ymax=np.max(few_group_flux[g, :]))
            plt.xlabel("x [cm]")
            plt.ylabel("Flux [Arb. Units]")
-           plt.title("Group {:}".format(g))
+           plt.title("Group {:}, {:.0f} spatial regions".format(g, len(x)))
            plt.grid()
            plt.legend()
            plt.savefig('outputs/reflector_flux_G{:.0f}.svg'.format(g))
