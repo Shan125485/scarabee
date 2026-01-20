@@ -145,7 +145,7 @@ class Reflector:
 
         return DiffusionCrossSection(D, Ea, Es, Ef, vEf, chi)
 
-    def solve(self) -> None:
+    def solve(self, D_type) -> None:
         """
         Runs a 1D problem to generate few group cross sections for the
         reflector, with the core baffle.

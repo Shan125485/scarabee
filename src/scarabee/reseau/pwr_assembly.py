@@ -2537,7 +2537,7 @@ class PWRAssembly:
         self._form_factors.append(ff)
         scarabee_log(LogLevel.Info, "")
 
-    def solve(self) -> None:
+    def solve(self, D_type) -> None:
         """
         Solves the assembly problem. If depletion_exposure_steps or
         depletion_time_steps are None, then a single k-eigenvalue problem will
