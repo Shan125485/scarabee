@@ -2196,7 +2196,7 @@ class PWRAssembly:
 
             return FormFactors(ff, x_widths, y_widths)
 
-    def _compute_few_group_xs(self) -> DiffusionCrossSection:
+    def _compute_few_group_xs(self, D_type=None) -> DiffusionCrossSection:
         """
         Computes the few-group diffusion cross sections for the problem.
 
@@ -2236,7 +2236,80 @@ class PWRAssembly:
         
         # Convert xs to diffusion xs, then condense
         diff_xs = homog_xs.diffusion_xs()
-        return diff_xs.condense(self.condensation_scheme, flux_spectrum)
+        if D_type == None:        
+            return diff_xs.condense(self.condensation_scheme, flux_spectrum)
+        
+        elif D_type == 'flux-limited':
+
+            ngroups = flux_spectrum.shape[0]
+            s1_array = np.zeros((ngroups, ngroups))
+            product = np.zeros(ngroups)
+            delta_tr_array = np.zeros(ngroups)
+            Et_array = np.zeros(ngroups)
+
+            for energy_out in range(ngroups):
+                product[energy_out] = 0
+                Et_array[energy_out] = homog_xs.Et(energy_out)
+                for energy_in in range(ngroups):
+                    s1_array[energy_in,energy_out] = homog_xs.Es(1,energy_in,energy_out)
+                    product[energy_out] += s1_array[energy_in,energy_out] * flux_spectrum[energy_in]
+                delta_tr_array[energy_out] = np.sum(product[energy_out]) / flux_spectrum[energy_out]
+        
+            Etr_fl_array = Et_array - delta_tr_array
+            D_mod = np.array( 1 / (3 * Etr_fl_array))
+        
+        elif D_type == 'outscatter':
+            ngroups = flux_spectrum.shape[0]
+            s1_array = np.zeros((ngroups, ngroups))
+            Et_array = np.zeros(ngroups)
+
+            for energy_out in range(ngroups):
+                Et_array[energy_out] = homog_xs.Et(energy_out)
+                for energy_in in range(ngroups):
+                    s1_array[energy_in,energy_out] = homog_xs.Es(1,energy_in,energy_out)
+            
+            s1g_array = np.sum(s1_array,1)
+
+            delta_tr_array = s1g_array
+
+            Etr_os_array = Et_array - delta_tr_array
+            D_mod = np.array( 1 / (3 * Etr_os_array))
+        
+        else:
+            raise ValueError("D_type must be one of ['flux-limited', 'outscatter']")
+
+
+        # Extract other parameters from the homogenised diffusion cross section object
+        Ea_array = np.zeros((ngroups))
+        Es_array = np.zeros((ngroups,ngroups))
+        Ef_array = np.zeros((ngroups))
+        vEf_array = np.zeros((ngroups))
+        chi_array = np.zeros((ngroups))
+
+        for g in range(ngroups):
+            Ea_array[g] = diff_xs.Ea(g)
+            Ef_array[g] = diff_xs.Ef(g)
+            vEf_array[g] = diff_xs.vEf(g)
+            chi_array[g] = diff_xs.chi(g)
+            for g_out in range(ngroups):
+                Es_array[g,g_out] = diff_xs.Es(g, g_out)
+       
+        # Explicitly cast to ndarray[numpy.float64]
+        Ea_array = np.asarray(Ea_array, dtype=np.float64)
+        Es_array = np.asarray(Es_array, dtype=np.float64)
+        Ef_array = np.asarray(Ef_array, dtype=np.float64)
+        vEf_array = np.asarray(vEf_array, dtype=np.float64)
+        chi_array = np.asarray(chi_array, dtype=np.float64)
+        D_mod = np.asarray(D_mod, dtype=np.float64)
+
+        # deal with nans...
+        D_mod = np.nan_to_num(D_mod, nan=0.0, posinf=1e6, neginf=1e6)
+
+        diffusionXS_mod = DiffusionCrossSection(D_mod, Ea_array, Es_array, Ef_array, vEf_array, chi_array, diff_xs.name)  
+        condensedDXS = diffusionXS_mod.condense(self.condensation_scheme, flux_spectrum)
+
+        return condensedDXS
+        # return diff_xs.condense(self.condensation_scheme, flux_spectrum)
 
     def _compute_leakage_corrections(self) -> LeakageCorrections:
         """
@@ -2326,7 +2399,7 @@ class PWRAssembly:
 
         return lc
 
-    def _compute_diffusion_data_and_form_factors(self) -> Tuple[DiffusionData, FormFactors]:
+    def _compute_diffusion_data_and_form_factors(self, D_type=None) -> Tuple[DiffusionData, FormFactors]:
         """
         Computes the nodal diffusion data for the assembly along with the form
         factors for pin power reconstruction.
@@ -2348,7 +2421,7 @@ class PWRAssembly:
         if self.condensation_scheme is None:
             raise RuntimeError("Energy condensation scheme not set.")
 
-        diff_xs = self._compute_few_group_xs()
+        diff_xs = self._compute_few_group_xs(D_type=D_type)
 
         ff = self._compute_form_factors()
 
@@ -2461,7 +2534,7 @@ class PWRAssembly:
         for t in threads:
             t.join()
 
-    def _run_depletion_steps(self) -> None:
+    def _run_depletion_steps(self, D_type) -> None:
         if self._chain is None:
             raise RuntimeError(
                 "No depletion chain is present. Cannot run depletion calculation."
@@ -2501,7 +2574,7 @@ class PWRAssembly:
             self._run_assembly_calculation(True)
             scarabee_log(LogLevel.Info, "")
             self._keff[t] = self._asmbly_moc.keff
-            dd, ff = self._compute_diffusion_data_and_form_factors()
+            dd, ff = self._compute_diffusion_data_and_form_factors(D_type=D_type)
             self._diffusion_data.append(dd)
             self._form_factors.append(ff)
 
@@ -2532,7 +2605,7 @@ class PWRAssembly:
         scarabee_log(LogLevel.Info, "")
         self._run_assembly_calculation(True)
         self._keff[-1] = self._asmbly_moc.keff
-        dd, ff = self._compute_diffusion_data_and_form_factors()
+        dd, ff = self._compute_diffusion_data_and_form_factors(D_type=D_type)
         self._diffusion_data.append(dd)
         self._form_factors.append(ff)
         scarabee_log(LogLevel.Info, "")
@@ -2547,10 +2620,10 @@ class PWRAssembly:
             # Single one-off calulcation
             self._run_assembly_calculation(True)
             self._keff = self._asmbly_moc.keff
-            self._diffusion_data, self._form_factors = self._compute_diffusion_data_and_form_factors()
+            self._diffusion_data, self._form_factors = self._compute_diffusion_data_and_form_factors(D_type=D_type)
         else:
             # Run depletion steps
-            self._run_depletion_steps()
+            self._run_depletion_steps(D_type=D_type)
 
 
 # REFERENCES
