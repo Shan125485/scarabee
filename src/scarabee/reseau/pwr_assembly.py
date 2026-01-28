@@ -2236,7 +2236,7 @@ class PWRAssembly:
         
         # Convert xs to diffusion xs, then condense
         diff_xs = homog_xs.diffusion_xs()
-        if D_type == None:        
+        if D_type == None or D_type == 'inscatter':        
             return diff_xs.condense(self.condensation_scheme, flux_spectrum)
         
         elif D_type == 'flux-limited':
@@ -2276,7 +2276,7 @@ class PWRAssembly:
             D_mod = np.array( 1 / (3 * Etr_os_array))
         
         else:
-            raise ValueError("D_type must be one of ['flux-limited', 'outscatter']")
+            raise ValueError("D_type must be one of ['flux-limited', 'outscatter', 'inscatter', None]")
 
 
         # Extract other parameters from the homogenised diffusion cross section object

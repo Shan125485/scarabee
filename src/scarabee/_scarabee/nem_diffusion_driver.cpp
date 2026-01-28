@@ -81,7 +81,7 @@ double NEMDiffusionDriver::calc_keff(
       denom += VvEf * oflx;
     }
   }
-
+  
   return keff * num / denom;
 }
 
