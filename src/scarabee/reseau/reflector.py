@@ -495,28 +495,6 @@ class Reflector:
         x_fuel = np.sum(dx[:NF])
         x_ref_end = np.sum(dx)
 
-        # SHAN EDIT: store intermediate data
-        dictionary = {'xmin': [0, x_fuel], 'xmax': [x_fuel, x_ref_end], 'keff': [ref_sn.keff, ref_sn.keff], 
-                           'avg_flx0': [avg_flx_fuel[0], avg_flx_ref[0]], 
-                           'avg_flx1': [avg_flx_fuel[1], avg_flx_ref[1]], 
-                           'jneg': [j_0, j_mid], 'jpos': [j_mid, j_max], 
-                           'D0': [fuel_diffusion_xs.D(0), self.diffusion_xs.D(0)], 'D1': [fuel_diffusion_xs.D(1), self.diffusion_xs.D(1)],
-                           'Ea0': [fuel_diffusion_xs.Ea(0), self.diffusion_xs.Ea(0)], 
-                           'Ea1': [fuel_diffusion_xs.Ea(1), self.diffusion_xs.Ea(1)],
-                           'Es00': [fuel_diffusion_xs.Es(0,0), self.diffusion_xs.Es(0,0)],
-                           'Es01': [fuel_diffusion_xs.Es(0,1), self.diffusion_xs.Es(0,1)],
-                           'Es10': [fuel_diffusion_xs.Es(1,0), self.diffusion_xs.Es(1,0)],
-                           'Es11': [fuel_diffusion_xs.Es(1,1), self.diffusion_xs.Es(1,1)],
-                           'Ef0': [fuel_diffusion_xs.Ef(0), self.diffusion_xs.Ef(0)],
-                           'Ef1': [fuel_diffusion_xs.Ef(1), self.diffusion_xs.Ef(1)],
-                           'vEf0': [fuel_diffusion_xs.vEf(0), self.diffusion_xs.vEf(0)],
-                           'vEf1': [fuel_diffusion_xs.vEf(1), self.diffusion_xs.vEf(1)],
-                           'chi0': [fuel_diffusion_xs.chi(0), self.diffusion_xs.chi(0)],
-                           'ch1': [fuel_diffusion_xs.chi(1), self.diffusion_xs.chi(1)],
-                           }
-        df_fuel = pd.DataFrame(data = dictionary)
-        df_fuel.to_csv('outputs/reflector_nodal_inputs.csv')
-
         fuel_node = NodalFlux1D(
             0.0, x_fuel, ref_sn.keff, fuel_diffusion_xs, avg_flx_fuel, j_0, j_mid
         )
@@ -575,7 +553,7 @@ class Reflector:
         self.diffusion_data = DiffusionData(self.diffusion_xs)
         self.diffusion_data.adf = self.adf
         self.diffusion_data.reflector = True
-        self.form_factors = FormFactors(np.array([[0.]]), np.array([self.assembly_width]), np.array([self.assembly_width]))
+        self.form_factors = FormFactors(np.array([[0.]]), np.array([self.assembly_width]), np.array([self.assembly_width])) # fuel assembly form factors?
 
         # Do a nodal k-eff calulation
         fuel_diffusion_data = DiffusionData(fuel_diffusion_xs)
@@ -585,14 +563,6 @@ class Reflector:
         nx = np.array([1, 1])
         dy = np.array([10.0])
         ny = np.array([1])
-
-        scarabee_log(LogLevel.Info, 'Inputs to nem_geom self.diffusion_xs.D(0) {}'.format(self.diffusion_xs.D(0)))
-        scarabee_log(LogLevel.Info, 'Inputs to nem_geom self.diffusion_xs.D(1) {}'.format(self.diffusion_xs.D(1)))
-        scarabee_log(LogLevel.Info, 'Inputs to nem_geom self.diffusion_data.adf {}'.format(self.diffusion_data.adf))
-        
-        scarabee_log(LogLevel.Info, 'Inputs to nem_geom fuel_diffusion_xs.D(0) {}'.format(fuel_diffusion_xs.D(0)))
-        scarabee_log(LogLevel.Info, 'Inputs to nem_geom fuel_diffusion_xs.D(1) {}'.format(fuel_diffusion_xs.D(1)))
-        scarabee_log(LogLevel.Info, 'Inputs to nem_geom fuel_diffusion_data.adf {}'.format(fuel_diffusion_data.adf))
 
         
         nem_geom = DiffusionGeometry(
@@ -622,20 +592,13 @@ class Reflector:
         scarabee_log(LogLevel.Info, 'flux_norm {}'.format(flux_norm))
         nem_keff_flux *= flux_norm / np.sum(nem_keff_flux[:, :NF])
 
-        # Plot flux for each group
-        for g in range(len(self.condensation_scheme)):
-           plt.plot(x, few_group_flux[g, :], label="Sn")
-           plt.plot(x, nodal_flux[g, :], label="NEM Fixed-Source")
-           plt.plot(x, nem_keff_flux[g, :, 0, 0], label="NEM keff")
-           plt.vlines(x_fuel, ymin=np.min(few_group_flux[g, :]), ymax=np.max(few_group_flux[g, :]), colors='black', linestyles='dashed')
-           plt.xlabel("x [cm]")
-           plt.ylabel("Flux [Arb. Units]")
-           plt.title("Group {:}".format(g))
-           plt.grid()
-           plt.legend()
-           plt.tight_layout()
-           plt.savefig('outputs/reflector_flux_G{:.0f}.svg'.format(g))
-           plt.close()
+        self.nem_solver = nem_solver
+        self.nem_geom = nem_geom
+        self.nem_keff_flux = nem_keff_flux
+        self.nodal_flux = nodal_flux
+        self.few_group_flux = few_group_flux
+        self.x = x
+        self.x_interface = x_fuel
 
 # [1] K. S. Smith, “Nodal diffusion methods and lattice physics data in LWR
 #     analyses: Understanding numerous subtle details,” Prog Nucl Energ,
