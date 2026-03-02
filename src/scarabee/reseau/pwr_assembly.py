@@ -516,6 +516,7 @@ class PWRAssembly:
         self._infinite_flux_spectrum = (
             None  # To reset to infinite spectrum in MOC driver
         )
+        self._flux_spectrum = 0 # Initialise flux spectrum
 
         # Depletion time steps in MWd/kg and depletion time steps in days.
         # Initially starts as None (should be provided by user)
@@ -701,6 +702,7 @@ class PWRAssembly:
     @property
     def flux_tolerance(self) -> float:
         return self._flux_tolerance
+    
 
     @flux_tolerance.setter
     def flux_tolerance(self, tol: float) -> None:
@@ -2234,6 +2236,9 @@ class PWRAssembly:
         else:
             flux_spectrum = FundamentalModeCriticalitySpectrum(homog_xs).flux
         
+        # Store the leakage-corrected assembly flux:
+        self._flux_spectrum = flux_spectrum
+        
         # Convert xs to diffusion xs, then condense
         diff_xs = homog_xs.diffusion_xs()
         if D_type == None or D_type == 'inscatter':        
@@ -2610,7 +2615,7 @@ class PWRAssembly:
         self._form_factors.append(ff)
         scarabee_log(LogLevel.Info, "")
 
-    def solve(self, D_type) -> None:
+    def solve(self, D_type=None) -> None:
         """
         Solves the assembly problem. If depletion_exposure_steps or
         depletion_time_steps are None, then a single k-eigenvalue problem will

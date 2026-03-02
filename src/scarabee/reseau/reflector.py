@@ -592,6 +592,7 @@ class Reflector:
         scarabee_log(LogLevel.Info, 'flux_norm {}'.format(flux_norm))
         nem_keff_flux *= flux_norm / np.sum(nem_keff_flux[:, :NF])
 
+        # Store attributes here for plotting in user scripts
         self.nem_solver = nem_solver
         self.nem_geom = nem_geom
         self.nem_keff_flux = nem_keff_flux
