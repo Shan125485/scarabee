@@ -2649,7 +2649,7 @@ class PWRAssembly:
             # Single one-off calulcation
             self._run_assembly_calculation(True)
             self._keff = self._asmbly_moc.keff
-            self._diffusion_data, self._form_factors = (self._compute_diffusion_data_and_form_factors())
+            self._diffusion_data, self._form_factors = (self._compute_diffusion_data_and_form_factors(D_type=D_type))
         else:
             # Run depletion steps
             self._run_depletion_steps(D_type=D_type)
